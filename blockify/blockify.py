@@ -103,6 +103,7 @@ class Blockify(object):
         self.orglist = blocklist[:]
         self.channels = self.get_channels()
         self.current_song = ""
+        self.company_list = self.get_company_list()
 
         # Determine if we can use sinks or have to use alsa.
         try:
@@ -143,10 +144,12 @@ class Blockify(object):
             log.info("Blockfile changed. Reloading.")
             self.blocklist.__init__()
 
-        for i in self.blocklist:
-            if self.current_song.startswith(i):
-                self.toggle_mute(1)
-                return True  # Return boolean to use as self.found in GUI.
+        in_company_list = any(company_name in self.current_song
+                              for company_name in self.company_list)
+
+        if self.current_song in self.blocklist or in_company_list:
+            self.toggle_mute(1)
+            return True  # Return boolean to use as self.found in GUI.
         else:
             self.toggle_mute()
 
@@ -173,6 +176,14 @@ class Blockify(object):
 
         # No song playing, so return an empty string.
         return ""
+
+    def get_company_list(self):
+        home = os.path.expanduser("~")
+        location = os.path.join(home, ".blockify_company_list")
+        with codecs.open(location, "r", encoding="utf-8") as companies_file:
+            company_list = [line.strip()
+                            for line in companies_file.readlines()]
+            return company_list
 
     def block_current(self):
         if self.current_song:
