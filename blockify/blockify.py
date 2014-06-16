@@ -25,6 +25,7 @@ import time
 import gtk
 import pygtk
 import wnck
+import blockifydbus
 
 
 try:
@@ -99,6 +100,8 @@ class Blockify(object):
 
     def __init__(self, blocklist):
         self._automute = True
+        self.connect_dbus()
+        self.dbus_song = None
         self.blocklist = blocklist
         self.orglist = blocklist[:]
         self.channels = self.get_channels()
@@ -115,19 +118,28 @@ class Blockify(object):
 
         log.info("Blockify initialized.")
 
-    @property
-    def automute(self):
-        return self._automute
+    def connect_dbus(self):
+        try:
+            self.dbus = blockifydbus.BlockifyDBus()
+            self.use_dbus = True
+            self._autodetect = True
+        except Exception as e:
+            log.error("Cannot connect to DBus. Autodetection and Player Controls"
+                      " will be unavailable ({}).".format(e))
+            self.dbus = None
+            self.use_dbus = False
+            self._autodetect = False
 
-    @automute.setter
-    def automute(self, boolean):
-        log.debug("Setting automute to: {}.".format(boolean))
-        self._automute = boolean
+    def is_ad_playing(self):
+        return self.current_song != self.dbus_song
 
     def update(self):
         "Main loop. Checks for blocklist match and mutes accordingly."
         # It all relies on current_song.
         self.current_song = self.get_current_song()
+        if self.use_dbus:
+            self.dbus_song = self.dbus.get_song_artist() + u" \u2013 " + \
+            self.dbus.get_song_title()
 
         # Manual control is enabled so we return here.
         if not self.automute:
@@ -137,6 +149,11 @@ class Blockify(object):
         if not self.current_song:
             self.toggle_mute(2)
             return
+
+        if self.autodetect and self.use_dbus:
+            if self.is_ad_playing():
+                self.toggle_mute(1)
+                return True
 
         # Check if the blockfile has changed.
         current_timestamp = self.blocklist.get_timestamp()
@@ -153,6 +170,7 @@ class Blockify(object):
         else:
             self.toggle_mute()
 
+        self.toggle_mute()
         return False
 
     def get_windows(self):
@@ -304,6 +322,24 @@ class Blockify(object):
         self.toggle_mute(2)
         sys.exit()
 
+    @property
+    def automute(self):
+        return self._automute
+
+    @automute.setter
+    def automute(self, boolean):
+        log.debug("Setting automute to: {}.".format(boolean))
+        self._automute = boolean
+
+    @property
+    def autodetect(self):
+        return self._autodetect
+
+    @autodetect.setter
+    def autodetect(self, boolean):
+        log.debug("Setting autodetect to: {}.".format(boolean))
+        self._autodetect = boolean
+
 
 def init_logger(logpath=None, loglevel=1, quiet=False):
     "Initializes the logging module."
@@ -339,7 +375,7 @@ def init_logger(logpath=None, loglevel=1, quiet=False):
 def main():
     "Entry point for the CLI-version of Blockify."
     try:
-        args = docopt(__doc__, version="1.0")
+        args = docopt(__doc__, version="1.1")
         init_logger(args["--log"], args["-v"], args["--quiet"])
     except NameError:
         init_logger(logpath=None, loglevel=2, quiet=False)
